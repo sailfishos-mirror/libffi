@@ -12,7 +12,7 @@ FROM docker.io/adelielinux/adelie:latest
 # Containerfiles' build dependencies.
 RUN apk add --no-cache \
       gcc g++ make musl-dev linux-headers binutils libtool \
-      autoconf automake texinfo dejagnu diffutils gawk bash
+      autoconf automake texinfo dejagnu diffutils bash
 
 # -----------------------------------------------------------------------------
 # Give UID 10000 a name so `whoami` works during DejaGnu tests.

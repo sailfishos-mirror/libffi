@@ -532,8 +532,35 @@ jobs:
       - name: Set up QEMU (binfmt)
         uses: docker/setup-qemu-action@v3
 
+      # docker/setup-qemu-action uses tonistiigi/binfmt, which ships no
+      # big-endian ppc64 emulator, so a linux/ppc64 image build fails with
+      # "exec format error".  Register the qemu-user-static set (which includes
+      # qemu-ppc64) with the fix-binary (F) flag for that leg only.
+      - name: Register big-endian ppc64 emulator
+        if: matrix.docker_arch == 'ppc64'
+        run: docker run --privileged --rm docker.io/multiarch/qemu-user-static --reset -p yes
+
+      # Adélie's distfiles mirror publishes an AAAA record but GitHub-hosted
+      # runners are IPv4-only, so the emulated apk hangs 60s on IPv6 and fails
+      # with "Permission denied".  Disabling IPv6 makes it fall through to IPv4.
+      - name: Disable IPv6 for the ppc64 mirror fetch
+        if: matrix.docker_arch == 'ppc64'
+        run: |
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
+
+      - name: DIAG can the runner reach the Adelie mirror
+        if: matrix.docker_arch == 'ppc64'
+        run: |
+          echo "IPv4:"; curl -4 -sS --max-time 25 -o /dev/null -w "http=%{http_code} time=%{time_total}s\n" \
+            https://distfiles.adelielinux.org/adelie/current/system/ppc64/APKINDEX.tar.gz || echo "IPv4 FAILED ($?)"
+          echo "default:"; curl -sS --max-time 25 -o /dev/null -w "http=%{http_code} time=%{time_total}s\n" \
+            https://distfiles.adelielinux.org/adelie/current/system/ppc64/APKINDEX.tar.gz || echo "default FAILED ($?)"
+
       - name: Build foreign-arch container image
-        run: docker build --platform linux/${{ matrix.docker_arch }} -f ${{ matrix.containerfile }} -t ${{ matrix.image }} .ci
+        # --network=host so the emulated RUN uses the host network stack (where
+        # IPv6 was disabled above); otherwise the buildkit netns still has it.
+        run: docker build --network=host --platform linux/${{ matrix.docker_arch }} -f ${{ matrix.containerfile }} -t ${{ matrix.image }} .ci
 
       - name: Build and test under emulation
         env:
